@@ -2,7 +2,6 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { GoogleGenAI, Type } from '@google/genai';
 import { 
   ShieldAlert, 
   ShieldCheck, 
@@ -18,8 +17,6 @@ import {
   Sparkles,
   Download
 } from 'lucide-react';
-
-const ai = new GoogleGenAI({ apiKey: process.env.NEXT_PUBLIC_GEMINI_API_KEY });
 
 type Risk = {
   title: string;
@@ -75,111 +72,30 @@ export default function Home() {
     setError('');
     setResult(null);
 
-    try {
-      let contentToAnalyze = text;
-
-      if (inputType === 'url') {
+      try {
         const response = await fetch('/api/analyze', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url: finalUrl }),
+          body: JSON.stringify({ 
+            url: inputType === 'url' ? finalUrl : undefined,
+            text: inputType === 'text' ? text : undefined
+          }),
         });
 
         const data = await response.json();
 
         if (!response.ok) {
-          throw new Error(data.error || 'Failed to fetch URL content');
+          throw new Error(data.error || 'Failed to analyze document');
         }
 
-        contentToAnalyze = data.text;
+        setAnalyzedText(data.text);
         if (data.finalUrl && data.finalUrl !== finalUrl) {
           setAnalyzedUrl(data.finalUrl);
         } else {
-          setAnalyzedUrl(finalUrl);
+          setAnalyzedUrl(inputType === 'url' ? finalUrl : '');
         }
-      } else {
-        setAnalyzedUrl('');
-      }
+        setResult(data.analysis);
 
-      // Truncate if too long (Gemini 3.1 Pro can handle a lot, but let's be safe)
-      const maxLength = 150000;
-      if (contentToAnalyze.length > maxLength) {
-        contentToAnalyze = contentToAnalyze.substring(0, maxLength);
-      }
-
-      setAnalyzedText(contentToAnalyze);
-
-      const prompt = `Analyze the following Privacy Policy or Terms of Service document.
-      
-Document Content:
-${contentToAnalyze}
-
-Please provide a detailed analysis including:
-1. An overall summary of the policy.
-2. What the site does with user data after an account is created (data usage).
-3. Potential risks to the user (e.g., selling data, arbitration clauses, loss of rights).
-4. Compliance issues or status regarding major regulations (GDPR, CCPA, etc.).
-5. An overall privacy score from 0 to 100 (100 being most privacy-respecting).
-`;
-
-      const genResult = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: prompt,
-        config: {
-          responseMimeType: 'application/json',
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              summary: { type: Type.STRING, description: 'Overall summary of the policy' },
-              dataUsage: {
-                type: Type.ARRAY,
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    category: { type: Type.STRING, description: 'Category of data collected' },
-                    purpose: { type: Type.STRING, description: 'How the data is used' },
-                    quote: { type: Type.STRING, description: 'Exact substring from the document proving this' },
-                  },
-                },
-              },
-              risks: {
-                type: Type.ARRAY,
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    title: { type: Type.STRING },
-                    description: { type: Type.STRING },
-                    severity: { type: Type.STRING, description: 'High, Medium, or Low' },
-                    quote: { type: Type.STRING, description: 'Exact substring from the document proving this' },
-                  },
-                },
-              },
-              compliance: {
-                type: Type.ARRAY,
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    regulation: { type: Type.STRING, description: 'e.g., GDPR, CCPA' },
-                    status: { type: Type.STRING, description: 'Compliant, Non-Compliant, or Unclear' },
-                    details: { type: Type.STRING },
-                    quote: { type: Type.STRING, description: 'Exact substring from the document proving this' },
-                  },
-                },
-              },
-              score: { type: Type.NUMBER, description: 'Privacy score from 0 to 100' },
-            },
-            required: ['summary', 'dataUsage', 'risks', 'compliance', 'score'],
-          },
-        },
-      });
-
-      const analysisText = genResult.text;
-      if (!analysisText) {
-        throw new Error('No text returned from Gemini');
-      }
-
-      const analysis = JSON.parse(analysisText);
-      setResult(analysis);
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -223,25 +139,43 @@ Please provide a detailed analysis including:
       return <div className="whitespace-pre-wrap text-sm text-slate-600 font-mono leading-relaxed">{text}</div>;
     }
 
-    const quoteIndex = text.toLowerCase().indexOf(activeQuote.text.toLowerCase());
-    if (quoteIndex === -1) {
+    const escapeRegExp = (string: string) => {
+      return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    };
+
+    const regex = new RegExp(`(${escapeRegExp(activeQuote.text)})`, 'gi');
+    const parts = text.split(regex);
+
+    // If no match found, just return the text
+    if (parts.length === 1) {
       return <div className="whitespace-pre-wrap text-sm text-slate-600 font-mono leading-relaxed">{text}</div>;
     }
-
-    const before = text.substring(0, quoteIndex);
-    const match = text.substring(quoteIndex, quoteIndex + activeQuote.text.length);
-    const after = text.substring(quoteIndex + activeQuote.text.length);
 
     const highlightColor = 
       activeQuote.type === 'risk' ? 'bg-red-200 text-red-900 border-red-400' :
       activeQuote.type === 'data' ? 'bg-purple-200 text-purple-900 border-purple-400' :
       'bg-emerald-200 text-emerald-900 border-emerald-400';
 
+    let firstMatchFound = false;
+
     return (
       <div className="whitespace-pre-wrap text-sm text-slate-600 font-mono leading-relaxed">
-        {before}
-        <mark ref={highlightRef} className={`rounded px-1 border-b-2 ${highlightColor}`}>{match}</mark>
-        {after}
+        {parts.map((part, i) => {
+          if (part.toLowerCase() === activeQuote.text.toLowerCase()) {
+            const isFirst = !firstMatchFound;
+            firstMatchFound = true;
+            return (
+              <mark 
+                key={i} 
+                ref={isFirst ? highlightRef : null} 
+                className={`rounded px-1 border-b-2 ${highlightColor}`}
+              >
+                {part}
+              </mark>
+            );
+          }
+          return <span key={i}>{part}</span>;
+        })}
       </div>
     );
   };
