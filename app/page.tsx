@@ -131,7 +131,10 @@ export default function Home() {
 
     useEffect(() => {
       if (highlightRef.current) {
-        highlightRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        // Add a small delay to ensure React has finished rendering the mark elements
+        setTimeout(() => {
+          highlightRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 50);
       }
     }, [activeQuote]);
 
@@ -139,14 +142,36 @@ export default function Home() {
       return <div className="whitespace-pre-wrap text-sm text-slate-600 font-mono leading-relaxed">{text}</div>;
     }
 
-    const escapeRegExp = (string: string) => {
-      return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const buildFlexibleRegex = (quote: string) => {
+      // Escape special regex characters
+      let escaped = quote.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      // Make whitespace flexible (match any amount of whitespace/newlines)
+      escaped = escaped.replace(/\s+/g, '\\s+');
+      // Make quotes flexible (match any type of quote)
+      escaped = escaped.replace(/['"“”‘’`]/g, '[\'\\"“”‘’`]');
+      // Handle ellipses that Gemini might add
+      escaped = escaped.replace(/\\\.\\\.\\\./g, '[\\s\\S]{0,200}');
+      return new RegExp(`(${escaped})`, 'gi');
     };
 
-    const regex = new RegExp(`(${escapeRegExp(activeQuote.text)})`, 'gi');
-    const parts = text.split(regex);
+    let regex = buildFlexibleRegex(activeQuote.text);
+    let parts = text.split(regex);
 
-    // If no match found, just return the text
+    // Fallback: If exact/flexible match fails, try matching just the first half of the quote
+    if (parts.length === 1 && activeQuote.text.length > 30) {
+      const halfQuote = activeQuote.text.substring(0, Math.floor(activeQuote.text.length / 2));
+      regex = buildFlexibleRegex(halfQuote);
+      parts = text.split(regex);
+      
+      // Fallback 2: Try just the first 20 characters
+      if (parts.length === 1) {
+        const shortQuote = activeQuote.text.substring(0, 20);
+        regex = buildFlexibleRegex(shortQuote);
+        parts = text.split(regex);
+      }
+    }
+
+    // If still no match found, just return the text
     if (parts.length === 1) {
       return <div className="whitespace-pre-wrap text-sm text-slate-600 font-mono leading-relaxed">{text}</div>;
     }
@@ -161,7 +186,8 @@ export default function Home() {
     return (
       <div className="whitespace-pre-wrap text-sm text-slate-600 font-mono leading-relaxed">
         {parts.map((part, i) => {
-          if (part.toLowerCase() === activeQuote.text.toLowerCase()) {
+          // Because we have one capturing group in our regex, every odd index (1, 3, 5...) is a match
+          if (i % 2 !== 0) {
             const isFirst = !firstMatchFound;
             firstMatchFound = true;
             return (
