@@ -1,0 +1,5 @@
+{
+  "name": "TermScanner",
+  "description": "Analyze Privacy Policies and Terms of Service for risks, compliance, and data usage.",
+  "requestFramePermissions": []
+}
