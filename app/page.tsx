@@ -15,7 +15,12 @@ import {
   Loader2,
   ArrowRight,
   Sparkles,
-  Download
+  Download,
+  Save,
+  FolderOpen,
+  Trash2,
+  X,
+  Clock
 } from 'lucide-react';
 
 type Risk = {
@@ -46,6 +51,15 @@ type AnalysisResult = {
   score: number;
 };
 
+type SavedAnalysis = {
+  id: string;
+  date: string;
+  title: string;
+  result: AnalysisResult;
+  analyzedText: string;
+  analyzedUrl: string;
+};
+
 export default function Home() {
   const [url, setUrl] = useState('');
   const [text, setText] = useState('');
@@ -56,6 +70,56 @@ export default function Home() {
   const [analyzedText, setAnalyzedText] = useState('');
   const [analyzedUrl, setAnalyzedUrl] = useState('');
   const [activeQuote, setActiveQuote] = useState<{text: string, type: 'risk' | 'data' | 'compliance'} | null>(null);
+  const [savedAnalyses, setSavedAnalyses] = useState<SavedAnalysis[]>([]);
+  const [showSavedModal, setShowSavedModal] = useState(false);
+
+  useEffect(() => {
+    const saved = localStorage.getItem('termscanner_saved');
+    if (saved) {
+      try {
+        setSavedAnalyses(JSON.parse(saved));
+      } catch (e) {
+        console.error('Failed to parse saved analyses', e);
+      }
+    }
+  }, []);
+
+  const saveAnalysis = () => {
+    if (!result) return;
+    
+    const newSave: SavedAnalysis = {
+      id: Date.now().toString(),
+      date: new Date().toISOString(),
+      title: analyzedUrl ? new URL(analyzedUrl).hostname : 'Pasted Text Analysis',
+      result,
+      analyzedText,
+      analyzedUrl
+    };
+
+    const updated = [newSave, ...savedAnalyses];
+    setSavedAnalyses(updated);
+    localStorage.setItem('termscanner_saved', JSON.stringify(updated));
+  };
+
+  const deleteSaved = (id: string) => {
+    const updated = savedAnalyses.filter(s => s.id !== id);
+    setSavedAnalyses(updated);
+    localStorage.setItem('termscanner_saved', JSON.stringify(updated));
+  };
+
+  const loadSaved = (saved: SavedAnalysis) => {
+    setResult(saved.result);
+    setAnalyzedText(saved.analyzedText);
+    setAnalyzedUrl(saved.analyzedUrl);
+    if (saved.analyzedUrl) {
+      setInputType('url');
+      setUrl(saved.analyzedUrl);
+    } else {
+      setInputType('text');
+      setText(saved.analyzedText);
+    }
+    setShowSavedModal(false);
+  };
 
   const handleAnalyze = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -262,9 +326,23 @@ export default function Home() {
             <ShieldCheck className="w-6 h-6" />
             TermScanner
           </div>
-          <div className="flex items-center gap-2 text-sm font-medium text-slate-500 bg-slate-100 px-3 py-1.5 rounded-full">
-            <Sparkles className="w-4 h-4 text-blue-500" />
-            Powered by Gemini
+          <div className="flex items-center gap-4">
+            <button
+              onClick={() => setShowSavedModal(true)}
+              className="flex items-center gap-2 text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors"
+            >
+              <FolderOpen className="w-4 h-4" />
+              Saved Analyses
+              {savedAnalyses.length > 0 && (
+                <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full text-xs">
+                  {savedAnalyses.length}
+                </span>
+              )}
+            </button>
+            <div className="flex items-center gap-2 text-sm font-medium text-slate-500 bg-slate-100 px-3 py-1.5 rounded-full">
+              <Sparkles className="w-4 h-4 text-blue-500" />
+              Powered by Gemini
+            </div>
           </div>
         </div>
       </header>
@@ -386,6 +464,13 @@ export default function Home() {
           >
             {/* Export Actions */}
             <div className="flex justify-end gap-3">
+              <button 
+                onClick={saveAnalysis}
+                className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-blue-50 border border-blue-200 rounded-xl hover:bg-blue-100 hover:border-blue-300 text-blue-700 transition-all shadow-sm"
+              >
+                <Save className="w-4 h-4" />
+                Save Analysis
+              </button>
               <button 
                 onClick={exportJSON}
                 className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-white border border-slate-200 rounded-xl hover:bg-slate-50 hover:border-slate-300 text-slate-700 transition-all shadow-sm"
@@ -532,6 +617,95 @@ export default function Home() {
           </motion.div>
         )}
       </main>
+
+      {/* Saved Analyses Modal */}
+      <AnimatePresence>
+        {showSavedModal && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowSavedModal(false)}
+              className="fixed inset-0 bg-slate-900/20 backdrop-blur-sm z-40"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-2xl bg-white rounded-2xl shadow-xl border border-slate-200 z-50 overflow-hidden flex flex-col max-h-[80vh]"
+            >
+              <div className="flex items-center justify-between p-6 border-b border-slate-100">
+                <div className="flex items-center gap-2 text-lg font-semibold text-slate-900">
+                  <FolderOpen className="w-5 h-5 text-blue-500" />
+                  Saved Analyses
+                </div>
+                <button
+                  onClick={() => setShowSavedModal(false)}
+                  className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              
+              <div className="p-6 overflow-y-auto custom-scrollbar flex-1">
+                {savedAnalyses.length === 0 ? (
+                  <div className="text-center py-12 text-slate-500">
+                    <FolderOpen className="w-12 h-12 mx-auto text-slate-300 mb-4" />
+                    <p>No saved analyses yet.</p>
+                    <p className="text-sm mt-1">Analyze a document and click "Save Analysis" to keep it here.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {savedAnalyses.map((saved) => (
+                      <div 
+                        key={saved.id}
+                        className="flex items-center justify-between p-4 rounded-xl border border-slate-200 hover:border-blue-300 hover:shadow-sm transition-all bg-white group"
+                      >
+                        <div 
+                          className="flex-1 cursor-pointer"
+                          onClick={() => loadSaved(saved)}
+                        >
+                          <h4 className="font-medium text-slate-900 mb-1 flex items-center gap-2">
+                            {saved.title}
+                            <span className={`text-xs px-2 py-0.5 rounded-full border ${
+                              saved.result.score >= 80 ? 'bg-green-50 text-green-700 border-green-200' :
+                              saved.result.score >= 50 ? 'bg-yellow-50 text-yellow-700 border-yellow-200' :
+                              'bg-red-50 text-red-700 border-red-200'
+                            }`}>
+                              Score: {saved.result.score}
+                            </span>
+                          </h4>
+                          <div className="flex items-center gap-4 text-xs text-slate-500">
+                            <span className="flex items-center gap-1">
+                              <Clock className="w-3 h-3" />
+                              {new Date(saved.date).toLocaleDateString()} {new Date(saved.date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                            </span>
+                            <span className="flex items-center gap-1">
+                              <ShieldAlert className="w-3 h-3" />
+                              {saved.result.risks.length} Risks
+                            </span>
+                          </div>
+                        </div>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            deleteSaved(saved.id);
+                          }}
+                          className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg opacity-0 group-hover:opacity-100 transition-all"
+                          title="Delete saved analysis"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
