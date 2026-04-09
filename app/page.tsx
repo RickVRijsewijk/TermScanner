@@ -22,6 +22,7 @@ import {
   X,
   Clock
 } from 'lucide-react';
+import { BarChart, Bar, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 
 type Risk = {
   title: string;
@@ -317,6 +318,33 @@ export default function Home() {
     link.remove();
   };
 
+  const getRiskChartData = () => {
+    if (!result) return [];
+    const counts = { High: 0, Medium: 0, Low: 0 };
+    result.risks.forEach(r => {
+      if (counts[r.severity] !== undefined) counts[r.severity]++;
+    });
+    return [
+      { name: 'High', count: counts.High, fill: '#ef4444' },
+      { name: 'Medium', count: counts.Medium, fill: '#f59e0b' },
+      { name: 'Low', count: counts.Low, fill: '#10b981' },
+    ].filter(d => d.count > 0);
+  };
+
+  const getDataUsageChartData = () => {
+    if (!result) return [];
+    const counts = result.dataUsage.reduce((acc, curr) => {
+      acc[curr.category] = (acc[curr.category] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+    return Object.keys(counts).map(key => ({
+      name: key,
+      value: counts[key]
+    }));
+  };
+
+  const PIE_COLORS = ['#3b82f6', '#8b5cf6', '#ec4899', '#f43f5e', '#f59e0b', '#10b981', '#06b6d4', '#14b8a6', '#84cc16'];
+
   return (
     <div className="min-h-screen bg-[#f8fafc] text-slate-900 font-sans selection:bg-blue-100">
       {/* Header */}
@@ -517,8 +545,23 @@ export default function Home() {
                   <h3>Potential Risks</h3>
                 </div>
                 {result.risks.length > 0 ? (
-                  <div className="space-y-4">
-                    {result.risks.map((risk, i) => (
+                  <>
+                    <div className="h-48 w-full mb-6">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={getRiskChartData()} layout="vertical" margin={{ top: 5, right: 30, left: 0, bottom: 5 }}>
+                          <XAxis type="number" hide />
+                          <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 12 }} width={60} />
+                          <RechartsTooltip cursor={{fill: 'transparent'}} contentStyle={{ borderRadius: '8px', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
+                          <Bar dataKey="count" radius={[0, 4, 4, 0]} barSize={24}>
+                            {getRiskChartData().map((entry, index) => (
+                              <Cell key={`cell-${index}`} fill={entry.fill} />
+                            ))}
+                          </Bar>
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                    <div className="space-y-4">
+                      {result.risks.map((risk, i) => (
                       <div 
                         key={i} 
                         className="flex items-start gap-4 p-4 rounded-xl bg-slate-50 border border-slate-100 cursor-pointer hover:border-red-300 transition-colors"
@@ -535,6 +578,7 @@ export default function Home() {
                       </div>
                     ))}
                   </div>
+                  </>
                 ) : (
                   <p className="text-sm text-slate-500 italic">No major risks identified in this document.</p>
                 )}
@@ -546,19 +590,48 @@ export default function Home() {
                   <Database className="w-5 h-5 text-purple-500" />
                   <h3>Data Collection & Usage</h3>
                 </div>
-                <div className="grid grid-cols-1 gap-4">
-                  {result.dataUsage.map((data, i) => (
-                    <div 
-                      key={i} 
-                      className="p-4 rounded-xl border border-slate-200 cursor-pointer hover:border-purple-300 transition-colors"
-                      onMouseEnter={() => data.quote && setActiveQuote({ text: data.quote, type: 'data' })}
-                      onMouseLeave={() => setActiveQuote(null)}
-                    >
-                      <h4 className="font-medium text-slate-900 mb-2 text-sm">{data.category}</h4>
-                      <p className="text-sm text-slate-600">{data.purpose}</p>
+                {result.dataUsage.length > 0 ? (
+                  <>
+                    <div className="h-48 w-full mb-6">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie
+                            data={getDataUsageChartData()}
+                            cx="50%"
+                            cy="50%"
+                            innerRadius={40}
+                            outerRadius={80}
+                            paddingAngle={2}
+                            dataKey="value"
+                          >
+                            {getDataUsageChartData().map((entry, index) => (
+                              <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
+                            ))}
+                          </Pie>
+                          <RechartsTooltip contentStyle={{ borderRadius: '8px', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
+                        </PieChart>
+                      </ResponsiveContainer>
                     </div>
-                  ))}
-                </div>
+                    <div className="grid grid-cols-1 gap-4">
+                      {result.dataUsage.map((data, i) => (
+                        <div 
+                          key={i} 
+                          className="p-4 rounded-xl border border-slate-200 cursor-pointer hover:border-purple-300 transition-colors"
+                          onMouseEnter={() => data.quote && setActiveQuote({ text: data.quote, type: 'data' })}
+                          onMouseLeave={() => setActiveQuote(null)}
+                        >
+                          <div className="flex items-center gap-2 mb-2">
+                            <div className="w-3 h-3 rounded-full" style={{ backgroundColor: PIE_COLORS[getDataUsageChartData().findIndex(d => d.name === data.category) % PIE_COLORS.length] }} />
+                            <h4 className="font-medium text-slate-900 text-sm">{data.category}</h4>
+                          </div>
+                          <p className="text-sm text-slate-600">{data.purpose}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                ) : (
+                  <p className="text-sm text-slate-500 italic">No data usage information found.</p>
+                )}
               </div>
 
               {/* Compliance */}
