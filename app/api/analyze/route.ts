@@ -98,6 +98,7 @@ Please provide a detailed analysis including:
 3. Potential risks to the user (e.g., selling data, arbitration clauses, loss of rights).
 4. Compliance issues or status regarding major regulations (GDPR, CCPA, etc.).
 5. An overall privacy score from 0 to 100 (100 being most privacy-respecting).
+6. Actionable recommendations for the user (e.g., "Opt out of marketing emails", "Use a burner email").
 `;
 
     const genResult = await ai.models.generateContent({
@@ -144,9 +145,14 @@ Please provide a detailed analysis including:
                 },
               },
             },
+            recommendations: {
+              type: Type.ARRAY,
+              items: { type: Type.STRING },
+              description: 'Actionable steps the user can take to protect their privacy based on this specific policy.'
+            },
             score: { type: Type.NUMBER, description: 'Privacy score from 0 to 100' },
           },
-          required: ['summary', 'dataUsage', 'risks', 'compliance', 'score'],
+          required: ['summary', 'dataUsage', 'risks', 'compliance', 'recommendations', 'score'],
         },
       },
     });

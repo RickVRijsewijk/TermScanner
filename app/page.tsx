@@ -20,7 +20,10 @@ import {
   FolderOpen,
   Trash2,
   X,
-  Clock
+  Clock,
+  MessageSquare,
+  Send,
+  Lightbulb
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 
@@ -73,6 +76,17 @@ export default function Home() {
   const [activeQuote, setActiveQuote] = useState<{text: string, type: 'risk' | 'data' | 'compliance'} | null>(null);
   const [savedAnalyses, setSavedAnalyses] = useState<SavedAnalysis[]>([]);
   const [showSavedModal, setShowSavedModal] = useState(false);
+  const [isChatOpen, setIsChatOpen] = useState(false);
+  const [chatMessages, setChatMessages] = useState<{role: 'user' | 'model', content: string}[]>([]);
+  const [chatInput, setChatInput] = useState('');
+  const [isChatLoading, setIsChatLoading] = useState(false);
+  const chatEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (chatEndRef.current) {
+      chatEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [chatMessages]);
 
   useEffect(() => {
     const saved = localStorage.getItem('termscanner_saved');
@@ -165,6 +179,38 @@ export default function Home() {
       setError(err.message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleChatSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!chatInput.trim() || isChatLoading) return;
+
+    const userMessage = chatInput.trim();
+    setChatInput('');
+    const newMessages = [...chatMessages, { role: 'user' as const, content: userMessage }];
+    setChatMessages(newMessages);
+    setIsChatLoading(true);
+
+    try {
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          documentText: analyzedText,
+          messages: newMessages
+        })
+      });
+
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Failed to get response');
+
+      setChatMessages([...newMessages, { role: 'model', content: data.reply }]);
+    } catch (err) {
+      console.error(err);
+      setChatMessages([...newMessages, { role: 'model', content: 'Sorry, I encountered an error answering your question.' }]);
+    } finally {
+      setIsChatLoading(false);
     }
   };
 
@@ -690,6 +736,93 @@ export default function Home() {
           </motion.div>
         )}
       </main>
+
+      {/* Chat UI */}
+      <AnimatePresence>
+        {result && !loading && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 20 }}
+            className={`fixed bottom-6 right-6 z-30 flex flex-col items-end ${isChatOpen ? 'w-96' : 'w-auto'}`}
+          >
+            {isChatOpen ? (
+              <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full overflow-hidden flex flex-col h-[500px]">
+                <div className="bg-blue-600 text-white p-4 flex items-center justify-between shrink-0">
+                  <div className="flex items-center gap-2 font-medium">
+                    <MessageSquare className="w-5 h-5" />
+                    Ask about this policy
+                  </div>
+                  <button 
+                    onClick={() => setIsChatOpen(false)}
+                    className="text-blue-100 hover:text-white transition-colors"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+                
+                <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50">
+                  {chatMessages.length === 0 ? (
+                    <div className="text-center text-slate-500 text-sm mt-4">
+                      <p>Ask anything about the document.</p>
+                      <p className="mt-2 text-xs">e.g., &quot;Do they sell my data?&quot; or &quot;Can I delete my account?&quot;</p>
+                    </div>
+                  ) : (
+                    chatMessages.map((msg, i) => (
+                      <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                        <div className={`max-w-[85%] p-3 rounded-2xl text-sm ${
+                          msg.role === 'user' 
+                            ? 'bg-blue-600 text-white rounded-tr-sm' 
+                            : 'bg-white border border-slate-200 text-slate-700 rounded-tl-sm shadow-sm'
+                        }`}>
+                          {msg.content}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                  {isChatLoading && (
+                    <div className="flex justify-start">
+                      <div className="bg-white border border-slate-200 p-3 rounded-2xl rounded-tl-sm shadow-sm flex items-center gap-2">
+                        <Loader2 className="w-4 h-4 text-blue-600 animate-spin" />
+                        <span className="text-xs text-slate-500">Thinking...</span>
+                      </div>
+                    </div>
+                  )}
+                  <div ref={chatEndRef} />
+                </div>
+
+                <form onSubmit={handleChatSubmit} className="p-3 bg-white border-t border-slate-100 shrink-0">
+                  <div className="relative flex items-center">
+                    <input
+                      type="text"
+                      value={chatInput}
+                      onChange={(e) => setChatInput(e.target.value)}
+                      placeholder="Ask a question..."
+                      className="w-full pl-4 pr-10 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm transition-all"
+                      disabled={isChatLoading}
+                    />
+                    <button
+                      type="submit"
+                      disabled={!chatInput.trim() || isChatLoading}
+                      className="absolute right-2 p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors disabled:opacity-50 disabled:hover:bg-transparent"
+                    >
+                      <Send className="w-4 h-4" />
+                    </button>
+                  </div>
+                </form>
+              </div>
+            ) : (
+              <button
+                onClick={() => setIsChatOpen(true)}
+                className="bg-blue-600 hover:bg-blue-700 text-white p-4 rounded-full shadow-lg flex items-center gap-2 transition-transform hover:scale-105"
+              >
+                <MessageSquare className="w-6 h-6" />
+                <span className="font-medium pr-2">Ask a Question</span>
+              </button>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Saved Analyses Modal */}
       <AnimatePresence>
